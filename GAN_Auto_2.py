@@ -156,7 +156,7 @@ loss_auto = nn.SmoothL1Loss()
 # Number of steps to apply to the discriminator
 d_steps = 1  # In Goodfellow et. al 2014 this variable is assigned to 1
 # Number of epochs
-num_epochs = 200
+num_epochs = 0
 
 
 def real_data_target(size):
@@ -238,19 +238,25 @@ def train_generator(optimizer, fake_data,desired_data,alpha,beta):
     return error_gan, err_auto,error,optimizer
 
 
-des = np.load('desired_data.npy')
-reg = np.load('regular_data.npy')
-scale= StandardScaler((0,1))
-des_scale= scale.fit(des).transform(des)
-reg_scale= scale.fit(reg).transform(reg)
-x_train_des, x_test_des, _,_ = train_test_split(des_scale,np.ones((des_scale.shape[0],1)),test_size=.3)
-x_train_reg, x_test_reg, _,_ = train_test_split(reg_scale,np.ones((reg_scale.shape[0],1)),test_size=.3)
 
+
+# des = np.load('desired_data.npy')
+# reg = np.load('regular_data.npy')
+# scale= StandardScaler((0,1))
+# des_scale= scale.fit(des).transform(des)
+# reg_scale= scale.fit(reg).transform(reg)
+# x_train_des, x_test_des, _,_ = train_test_split(des_scale,np.ones((des_scale.shape[0],1)),test_size=.3)
+# x_train_reg, x_test_reg, _,_ = train_test_split(reg_scale,np.ones((reg_scale.shape[0],1)),test_size=.3)
+
+x_train_des = np.load('x_train_des.npy')
+x_test_des = np.load('x_test_des.npy')
+x_train_reg = np.load('x_train_reg.npy')
+x_test_reg = np.load('x_test_reg.npy')
 
 # reg = np.load('regular_data.npy')
 # Create loader with data, so that we can iterate over it
 batch_size=20
-data_loader = torch.utils.data.DataLoader(des, batch_size=batch_size, shuffle=True)
+# data_loader = torch.utils.data.DataLoader(des, batch_size=batch_size, shuffle=True)
 # Num batches
 num_batches = int(x_train_des.shape[0]/batch_size)-1
 
@@ -298,9 +304,10 @@ for epoch in range(num_epochs):
         fake_data= generator.forward(noise(real_data.size(0))+auto_latent).detach()
         # fake_data = generator(noise(real_data.size(0))).detach()
         # Train D
+        new_fake_data = .5*fake_data + .5*auto_pred
 
         d_error_real, d_error_fake, d_pred_real, d_pred_fake,d_optimizer = train_discriminator(d_optimizer,
-                                                                real_data, fake_data)
+                                                                real_data, new_fake_data)
 
         # train auto-encoder
         auto_err, auto_output, auto_optimizer = train_auto(auto_optimizer,auto_data)
@@ -309,8 +316,10 @@ for epoch in range(num_epochs):
         # Generate fake data
         auto_latent, auto_pred = autoencoder.forward(auto_data)
         fake_data = generator(noise(data_batch_auto.shape[0])+auto_latent)
+
+        new_fake_data = .5 * fake_data + .5 * auto_pred
         # Train G
-        g_gan,g_auto,g_error,g_optimizer = train_generator(g_optimizer, fake_data,auto_data,.5,.5)
+        g_gan,g_auto,g_error,g_optimizer = train_generator(g_optimizer, new_fake_data,auto_data,.5,.5)
         # Log error
         # logger.log(d_error, g_error, epoch, n_batch, num_batches)
 
@@ -340,22 +349,23 @@ for epoch in range(num_epochs):
         # Model Checkpoints
         # logger.save_models(generator, discriminator, epoch)
 
-# torch.save(generator,'generator_net_hybrid.pt')
-# torch.save(discriminator,'discriminator_net_hybrid.pt')
-# torch.save(autoencoder,'autoencoder_hybrid.pt')
+torch.save(generator,'generator_net_hybrid.pt')
+torch.save(discriminator,'discriminator_net_hybrid.pt')
+torch.save(autoencoder,'autoencoder_hybrid.pt')
 
 
 batch_test = 5
 num_batch_test = int(x_test_des.shape[0]/batch_test)
-num_epochs_test = 1
+num_epochs_test = 10
 test_mode = True
 N_out = 1
 softmax = nn.Sequential(nn.Softmax(dim=N_out))
 if test_mode:
     generator = torch.load('generator_net_hybrid.pt')
-    discriminator = torch.load('discriminator_net_simple_GAN.pt')
+    discriminator_hybrid = torch.load('discriminator_net_simple_GAN.pt')
     autoencoder = torch.load('autoencoder_hybrid.pt')
-    discriminator_hybrid = torch.load('discriminator_net_hybrid.pt')
+    discriminator = torch.load('discriminator_net_hybrid.pt')
+
     prec_real_simple = []
     prec_real_hybrid = []
     prec_fake_simple = []
@@ -376,6 +386,7 @@ if test_mode:
                 auto_latent, auto_pred = autoencoder.forward(auto_data)
                 fake_data = generator.forward(noise(real_data.size(0)) + auto_latent).detach()
 
+                fake_data = .5*fake_data+.5*auto_pred
                 prediction_real = discriminator(real_data)
                 prediction_real_hybrid = discriminator_hybrid(real_data)
                 c_simple=0

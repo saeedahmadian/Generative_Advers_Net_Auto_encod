@@ -99,7 +99,7 @@ loss = nn.BCELoss()
 # Number of steps to apply to the discriminator
 d_steps = 1  # In Goodfellow et. al 2014 this variable is assigned to 1
 # Number of epochs
-num_epochs = 200
+num_epochs =200
 
 
 def real_data_target(size):
@@ -161,15 +161,16 @@ def train_generator(optimizer, fake_data):
     return error,optimizer
 
 
-des = np.load('desired_data.npy')
-scale= StandardScaler((0,1))
-des_scale= scale.fit(des).transform(des)
-x_train, x_test, _,_ = train_test_split(des,np.ones((des.shape[0],1)),test_size=.3)
-
+# des = np.load('desired_data.npy')
+# scale= StandardScaler((0,1))
+# des_scale= scale.fit(des).transform(des)
+# x_train, x_test, _,_ = train_test_split(des,np.ones((des.shape[0],1)),test_size=.3)
+x_train= np.load('x_train_des.npy')
+x_test= np.load('x_test_des.npy')
 # reg = np.load('regular_data.npy')
 # Create loader with data, so that we can iterate over it
 batch_size=20
-data_loader = torch.utils.data.DataLoader(des, batch_size=batch_size, shuffle=True)
+data_loader = torch.utils.data.DataLoader(x_train, batch_size=batch_size, shuffle=True)
 # Num batches
 num_batches = int(x_train.shape[0]/batch_size)-1
 
@@ -241,8 +242,8 @@ for epoch in range(num_epochs):
         # Model Checkpoints
         # logger.save_models(generator, discriminator, epoch)
 
-torch.save(generator,'generator_net_simple_GAN_raw.pt')
-torch.save(discriminator,'discriminator_net_simple_GAN_raw.pt')
+torch.save(generator,'generator_net_simple_GAN.pt')
+torch.save(discriminator,'discriminator_net_simple_GAN.pt')
 
 batch_test = 5
 num_batch_test = int(x_test.shape[0]/batch_test)
@@ -251,8 +252,8 @@ test_mode = True
 N_out = 1
 softmax = nn.Sequential(nn.Softmax(dim=N_out))
 if test_mode:
-    generator = torch.load('generator_net.pt')
-    discriminator = torch.load('discriminator_net.pt')
+    generator = torch.load('generator_net_simple_GAN.pt')
+    discriminator = torch.load('discriminator_net_simple_GAN.pt')
     prec_real=[]
     prec_fake=[]
     err_real_test=[]
