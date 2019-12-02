@@ -99,7 +99,7 @@ loss = nn.BCELoss()
 # Number of steps to apply to the discriminator
 d_steps = 1  # In Goodfellow et. al 2014 this variable is assigned to 1
 # Number of epochs
-num_epochs = 0
+num_epochs = 200
 
 
 def real_data_target(size):
@@ -162,6 +162,8 @@ def train_generator(optimizer, fake_data):
 
 
 des = np.load('desired_data.npy')
+scale= StandardScaler((0,1))
+des_scale= scale.fit(des).transform(des)
 x_train, x_test, _,_ = train_test_split(des,np.ones((des.shape[0],1)),test_size=.3)
 
 # reg = np.load('regular_data.npy')
@@ -239,8 +241,8 @@ for epoch in range(num_epochs):
         # Model Checkpoints
         # logger.save_models(generator, discriminator, epoch)
 
-torch.save(generator,'generator_net.pt')
-torch.save(discriminator,'discriminator_net.pt')
+torch.save(generator,'generator_net_simple_GAN_raw.pt')
+torch.save(discriminator,'discriminator_net_simple_GAN_raw.pt')
 
 batch_test = 5
 num_batch_test = int(x_test.shape[0]/batch_test)

@@ -39,23 +39,22 @@ class DiscriminatorNet(nn.Module):
         #     nn.Dropout(0.3)
         # )
         self.hidden2 = nn.Sequential(
-            torch.nn.Linear(512, self.num_z),
+            torch.nn.Linear(512, 256),
             nn.LeakyReLU(0.2),
             nn.Dropout(0.3)
         )
         self.out = nn.Sequential(
-            torch.nn.Linear(2*self.num_z, self.num_out),
+            torch.nn.Linear(256, self.num_out),
             torch.nn.Sigmoid()
         )
 
-    def forward(self, x, auto_latent):
+    def forward(self, x):
         x = self.hidden0(x)
         x = self.hidden1(x)
         # x = self.latent1(x)
         x = self.hidden2(x)
-        new_x= torch.cat([x,auto_latent],1)
-        new_x = self.out(new_x)
-        return new_x
+        x = self.out(x)
+        return x
 
 
 
@@ -83,8 +82,8 @@ class Auto_Encoder(nn.Module):
             nn.Dropout(0.3)
         )
         self.decoder = nn.Sequential(
-            torch.nn.Linear(64, self.num_out),
-            torch.nn.Sigmoid()
+            torch.nn.Linear(64, self.num_out)
+
         )
 
     def forward(self, x):
@@ -181,18 +180,18 @@ num_test_samples = 16
 test_noise = noise(num_test_samples)
 
 
-def train_discriminator(optimizer, real_data, fake_data,latent):
+def train_discriminator(optimizer, real_data, fake_data):
     # Reset gradients
     optimizer.zero_grad()
 
     # 1.1 Train on Real Data
-    prediction_real = discriminator.forward(real_data,latent)
+    prediction_real = discriminator.forward(real_data)
     # Calculate error and backpropagate
     error_real = loss(prediction_real, real_data_target(real_data.size(0)))
-    error_real.backward(retain_graph=True)
+    error_real.backward()
 
     # 1.2 Train on Fake Data
-    prediction_fake = discriminator.forward(fake_data,latent)
+    prediction_fake = discriminator.forward(fake_data)
     # Calculate error and backpropagate
     error_fake = loss(prediction_fake, fake_data_target(real_data.size(0)))
     error_fake.backward()
@@ -225,7 +224,7 @@ def train_generator(optimizer, fake_data,desired_data,alpha,beta):
     optimizer.zero_grad()
     latent, auto_pred = autoencoder.forward(desired_data)
     # Sample noise and generate fake data
-    prediction_d = discriminator(fake_data,latent)
+    prediction_d = discriminator(fake_data)
 
     prediction_g= generator.forward(noise(real_data.size(0))+latent)
     # Calculate error and backpropagate
@@ -289,7 +288,9 @@ for epoch in range(num_epochs):
         data_batch_disc = x_train_disc[step*batch_size:(1+step)*batch_size,:]
         data_batch_auto = x_train_auto[step*batch_size:(1+step)*batch_size,:]
         real_data = torch.tensor(data_batch_disc).float().to(device)
+        # real_data= Variable(torch.tensor(data_batch_disc))
         auto_data = torch.tensor(data_batch_auto).float().to(device)
+        # auto_data= Variable(torch.tensor(data_batch_auto))
             # Variable(images_to_vectors(real_batch))
         # if torch.cuda.is_available(): real_data = real_data.cuda()
         # Generate fake data
@@ -299,7 +300,7 @@ for epoch in range(num_epochs):
         # Train D
 
         d_error_real, d_error_fake, d_pred_real, d_pred_fake,d_optimizer = train_discriminator(d_optimizer,
-                                                                real_data, fake_data,auto_latent)
+                                                                real_data, fake_data)
 
         # train auto-encoder
         auto_err, auto_output, auto_optimizer = train_auto(auto_optimizer,auto_data)
@@ -339,49 +340,75 @@ for epoch in range(num_epochs):
         # Model Checkpoints
         # logger.save_models(generator, discriminator, epoch)
 
-torch.save(generator,'generator_net_Hyb_GAN.pt')
-torch.save(discriminator,'discriminator_net_Hyb_GAN.pt')
-torch.save(autoencoder,'autoencoder_Hyb_GAN.pt')
+# torch.save(generator,'generator_net_hybrid.pt')
+# torch.save(discriminator,'discriminator_net_hybrid.pt')
+# torch.save(autoencoder,'autoencoder_hybrid.pt')
+
 
 batch_test = 5
-num_batch_test = int(x_test.shape[0]/batch_test)
+num_batch_test = int(x_test_des.shape[0]/batch_test)
 num_epochs_test = 1
 test_mode = True
 N_out = 1
 softmax = nn.Sequential(nn.Softmax(dim=N_out))
 if test_mode:
-    generator = torch.load('generator_net.pt')
-    discriminator = torch.load('discriminator_net.pt')
-    prec_real=[]
-    prec_fake=[]
-    err_real_test=[]
-    err_fake_test=[]
+    generator = torch.load('generator_net_hybrid.pt')
+    discriminator = torch.load('discriminator_net_simple_GAN.pt')
+    autoencoder = torch.load('autoencoder_hybrid.pt')
+    discriminator_hybrid = torch.load('discriminator_net_hybrid.pt')
+    prec_real_simple = []
+    prec_real_hybrid = []
+    prec_fake_simple = []
+    prec_fake_hybrid = []
+    err_real_simple = []
+    err_real_hybrid = []
+    err_fake_simple = []
+    err_fake_hybrid = []
     for epoch_test in range(num_epochs_test):
-        x_test = randomize(x_test)
+        x_test_disc = randomize(x_test_reg)
+        x_test_auto = randomize(x_test_reg)
         for step in range(num_batch_test):
-            data_batch = x_test[step * batch_test:(1 + step) * batch_test, :]
-            test_data = torch.tensor(data_batch).float().to(device)
+            data_batch_disc = x_test_disc[step * batch_test:(1 + step) * batch_test, :]
+            data_batch_auto = x_test_auto[step * batch_test:(1 + step) * batch_test, :]
+            real_data = torch.tensor(data_batch_disc).float().to(device)
+            auto_data =  torch.tensor(data_batch_auto).float().to(device)
             with torch.no_grad():
-                fake_data = generator.forward(noise(test_data.size(0))).detach()
-                prediction_real = discriminator(test_data)
-                c=0
-                for i in prediction_real.numpy():
-                    if i >.5:
-                        c=c+1
-                prec_real.append(c/test_data.size(0))
-                # Calculate error and backpropagate
-                error_real = loss(prediction_real, real_data_target(test_data.size(0)))
-                err_real_test.append(error_real)
+                auto_latent, auto_pred = autoencoder.forward(auto_data)
+                fake_data = generator.forward(noise(real_data.size(0)) + auto_latent).detach()
 
-                prediction_fake = discriminator(fake_data)
-                c = 0
-                for i in prediction_fake.numpy():
-                    if i < .5:
-                        c = c + 1
-                prec_fake.append(c / test_data.size(0))
+                prediction_real = discriminator(real_data)
+                prediction_real_hybrid = discriminator_hybrid(real_data)
+                c_simple=0
+                c_hybrid=0
+                for i in range(batch_test):
+                    if prediction_real.numpy()[i] >.5:
+                        c_simple=c_simple+1
+                    if prediction_real_hybrid.numpy()[i]> 0.5:
+                        c_hybrid =c_hybrid+1
+                prec_real_simple.append(c_simple / batch_test)
+                prec_real_hybrid.append(c_hybrid / batch_test)
                 # Calculate error and backpropagate
-                error_fake = loss(prediction_fake, fake_data_target(test_data.size(0)))
-                err_fake_test.append(error_fake)
+                error_r_simple = loss(prediction_real, real_data_target(real_data.size(0)))
+                error_r_hybrid = loss(prediction_real, real_data_target(real_data.size(0)))
+                err_real_simple.append(error_r_simple)
+                err_real_hybrid.append(error_r_hybrid)
+
+                prediction_fake_simple = discriminator(fake_data)
+                prediction_fake_hybrid = discriminator_hybrid(fake_data)
+                c_simple = 0
+                c_hybrid = 0
+                for i in range(batch_test):
+                    if prediction_fake_simple.numpy()[i] < .5:
+                        c_simple = c_simple + 1
+                    if prediction_fake_hybrid.numpy()[i] < .5:
+                        c_hybrid = c_hybrid + 1
+                prec_fake_simple.append(c_simple / batch_test)
+                prec_fake_hybrid.append(c_hybrid/batch_test)
+                # Calculate error and backpropagate
+                error_f_simple = loss(prediction_fake_simple, fake_data_target(real_data.size(0)))
+                error_f_hybrid = loss(prediction_fake_hybrid, fake_data_target(real_data.size(0)))
+                err_fake_simple.append(error_f_simple)
+                err_fake_hybrid.append(error_f_hybrid)
 
 
 
