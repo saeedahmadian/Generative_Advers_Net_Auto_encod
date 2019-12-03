@@ -8,6 +8,49 @@ from torch import nn, optim
 from torch.autograd.variable import Variable
 from sklearn.model_selection import train_test_split
 # from utils import Logger as Log
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+import os
+from mpl_toolkits.mplot3d import Axes3D
+
+pca3_mdl = PCA(n_components=3)
+pca2_mdl= PCA(n_components=2)
+# TSNE
+tsne_out = TSNE(n_components=3)
+
+def plot_3d(auto, gen, real, alpha, beta,epoch,batch_step):
+    fig = plt.figure()
+    ax1 = fig.add_subplot(131, projection='3d')
+    ax2 = fig.add_subplot(132, projection='3d')
+    ax3 = fig.add_subplot(133, projection='3d')
+    ax1.scatter(auto[:, 0], auto[:, 1], auto[:, 2],
+                c='r', marker='^',label='Auto-encoder latent variables alpha='+str(alpha)+'beta ='+ str(beta))
+    ax2.scatter(gen[:, 0], gen[:, 1], gen[:, 2],
+                c='g', marker='*', label='Generator latent variables alpha='+str(alpha)+'beta ='+ str(beta))
+
+    ax3.scatter(real[:, 0], real[:, 1], real[:, 2],
+                c='b', marker='+', label='Generator latent variables alpha=' + str(alpha) + 'beta =' + str(beta))
+    plt.legend()
+    fig.savefig(os.path.join('figs', '{}_{}.png'.format(epoch, batch_step)))
+    plt.close(fig)
+
+def plot_2d(auto, gen, real, alpha, beta,epoch,batch_step):
+    fig = plt.figure(figsize=[10,15])
+    ax1 = fig.add_subplot(131)
+    ax2 = fig.add_subplot(132)
+    ax3 = fig.add_subplot(133)
+    ax1.scatter(auto[:, 0], auto[:, 1],
+                c='r', marker='^', label='Auto-encoder latent variables alpha=' + str(alpha) + 'beta =' + str(beta))
+    ax2.scatter(gen[:, 0], gen[:, 1],
+                c='g', marker='*', label='Generator latent variables alpha=' + str(alpha) + 'beta =' + str(beta))
+
+    ax3.scatter(real[:, 0], real[:, 1],
+                c='b', marker='+', label='Generator latent variables alpha=' + str(alpha) + 'beta =' + str(beta))
+    plt.legend()
+    fig.savefig(os.path.join('figs2d', 'pca_{}_{}.png'.format(epoch, batch_step)))
+    plt.close(fig)
+
+
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
@@ -156,7 +199,7 @@ loss_auto = nn.SmoothL1Loss()
 # Number of steps to apply to the discriminator
 d_steps = 1  # In Goodfellow et. al 2014 this variable is assigned to 1
 # Number of epochs
-num_epochs = 0
+num_epochs = 200
 
 
 def real_data_target(size):
@@ -230,7 +273,7 @@ def train_generator(optimizer, fake_data,desired_data,alpha,beta):
     # Calculate error and backpropagate
     error_gan = loss(prediction_d, real_data_target(prediction_d.size(0)))
     err_auto = loss_auto(prediction_g,auto_pred)
-    error = alpha*error_gan + beta* err_auto
+    error = beta*error_gan + alpha* err_auto
     error.backward()
     # Update weights with gradients
     optimizer.step()
@@ -283,6 +326,8 @@ d_optimizer.zero_grad()
 g_optimizer.zero_grad()
 
 data_training= np.concatenate([x_train_des,x_train_reg], axis=0)
+alpha = .2
+beta =.8
 
 for epoch in range(num_epochs):
 
@@ -304,7 +349,7 @@ for epoch in range(num_epochs):
         fake_data= generator.forward(noise(real_data.size(0))+auto_latent).detach()
         # fake_data = generator(noise(real_data.size(0))).detach()
         # Train D
-        new_fake_data = .5*fake_data + .5*auto_pred
+        new_fake_data = beta*fake_data + alpha*auto_pred
 
         d_error_real, d_error_fake, d_pred_real, d_pred_fake,d_optimizer = train_discriminator(d_optimizer,
                                                                 real_data, new_fake_data)
@@ -317,9 +362,9 @@ for epoch in range(num_epochs):
         auto_latent, auto_pred = autoencoder.forward(auto_data)
         fake_data = generator(noise(data_batch_auto.shape[0])+auto_latent)
 
-        new_fake_data = .5 * fake_data + .5 * auto_pred
+        new_fake_data = beta * fake_data + alpha * auto_pred
         # Train G
-        g_gan,g_auto,g_error,g_optimizer = train_generator(g_optimizer, new_fake_data,auto_data,.5,.5)
+        g_gan,g_auto,g_error,g_optimizer = train_generator(g_optimizer, new_fake_data,auto_data,alpha,beta)
         # Log error
         # logger.log(d_error, g_error, epoch, n_batch, num_batches)
 
@@ -337,6 +382,14 @@ for epoch in range(num_epochs):
             total_d_err_fake.append(d_error_fake)
             total_d_err_real.append(d_error_real)
             total_auto_err.append(auto_err)
+    pca3_gen = pca3_mdl.fit_transform(new_fake_data.detach().numpy())
+    pca3_auto = pca3_mdl.fit_transform(auto_pred.detach().numpy())
+    pca3_des = pca3_mdl.fit_transform(data_batch_auto)
+    pca2_gen = pca2_mdl.fit_transform(new_fake_data.detach().numpy())
+    pca2_auto = pca2_mdl.fit_transform(auto_pred.detach().numpy())
+    pca2_des = pca2_mdl.fit_transform(data_batch_auto)
+    plot_3d(pca3_auto, pca3_gen, pca3_des, alpha, beta, epoch, step)
+    plot_2d(pca2_auto, pca2_gen, pca2_des, alpha, beta, epoch, step)
             # display.clear_output(True)
             # # Display Images
             # test_images = vectors_to_images(generator(test_noise)).data.cpu()
@@ -357,7 +410,7 @@ torch.save(autoencoder,'autoencoder_hybrid.pt')
 batch_test = 5
 num_batch_test = int(x_test_des.shape[0]/batch_test)
 num_epochs_test = 10
-test_mode = True
+test_mode = False
 N_out = 1
 softmax = nn.Sequential(nn.Softmax(dim=N_out))
 if test_mode:
@@ -386,7 +439,7 @@ if test_mode:
                 auto_latent, auto_pred = autoencoder.forward(auto_data)
                 fake_data = generator.forward(noise(real_data.size(0)) + auto_latent).detach()
 
-                fake_data = .5*fake_data+.5*auto_pred
+                fake_data = beta*fake_data+ alpha*auto_pred
                 prediction_real = discriminator(real_data)
                 prediction_real_hybrid = discriminator_hybrid(real_data)
                 c_simple=0
